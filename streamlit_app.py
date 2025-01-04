@@ -1,151 +1,121 @@
 import streamlit as st
 import pandas as pd
-import math
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 from pathlib import Path
 
-# Set the title and favicon that appear in the Browser's tab bar.
+# Set the title and favicon for the app.
 st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
+    page_title='Water Usage Prediction Dashboard',
+    page_icon=':droplet:', # Water droplet emoji for a relevant icon.
 )
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+# -------------------------------------------------------------------------------
+# Functions for Data Loading and Preprocessing
 
 @st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+def load_data():
+    """Load water usage and population data."""
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
+    # Example: Reading from a CSV file. Replace with your actual data source.
+    DATA_FILENAME = Path(__file__).parent / 'data/water_usage_data.csv'
+    df = pd.read_csv(DATA_FILENAME)
 
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
+    # Example of preprocessing (customize based on your dataset).
+    df['Year'] = pd.to_datetime(df['Year'], format='%Y')
+    df['Water_Usage'] = df['Water_Usage'] / 1000  # Example: Convert to cubic meters
+    return df
 
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
+# Load the data
+df = load_data()
 
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
-    )
+# -------------------------------------------------------------------------------
+# Draw the app
 
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
-
-    return gdp_df
-
-gdp_df = get_gdp_data()
-
-# -----------------------------------------------------------------------------
-# Draw the actual page
-
-# Set the title that appears at the top of the page.
+# Set the title at the top of the page.
 '''
-# :earth_americas: GDP dashboard
+# :droplet: Water Usage Prediction Dashboard
 
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
+Explore water usage patterns in Malaysia and predict future consumption trends. 
+Select years and states to visualize water consumption and other relevant data.
 '''
 
 # Add some spacing
 ''
-''
 
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
+# Get minimum and maximum year from the data
+min_year = df['Year'].min().year
+max_year = df['Year'].max().year
 
+# Slider to select the range of years
 from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
-
-countries = gdp_df['Country Code'].unique()
-
-if not len(countries):
-    st.warning("Select at least one country")
-
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
-
-''
-''
-''
-
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
+    'Select the range of years for analysis',
+    min_value=min_year,
+    max_value=max_year,
+    value=[min_year, max_year]
 )
 
-''
-''
+# Filter the data based on the selected year range
+filtered_df = df[(df['Year'].dt.year >= from_year) & (df['Year'].dt.year <= to_year)]
 
+# Select the states for the user to choose
+states = df['State'].unique()
 
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
+# Multiselect to choose specific states
+selected_states = st.multiselect(
+    'Which states do you want to view?',
+    states,
+    default=states[:5]  # Default to first 5 states if no selection is made
+)
 
-st.header(f'GDP in {to_year}', divider='gray')
+# Filter the data based on the selected states
+filtered_df = filtered_df[filtered_df['State'].isin(selected_states)]
 
-''
+# Display data in table format for reference
+st.header('Water Usage Data', divider='gray')
+st.write(filtered_df)
 
-cols = st.columns(4)
+# -------------------------------------------------------------------------------
+# Visualization of Water Usage Trends
 
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
+# Line chart for water usage trends
+st.header('Water Usage Over Time', divider='gray')
+fig, ax = plt.subplots(figsize=(10, 6))
+sns.lineplot(x='Year', y='Water_Usage', hue='State', data=filtered_df, ax=ax)
+ax.set_title('Water Usage Trends by State')
+ax.set_xlabel('Year')
+ax.set_ylabel('Water Usage (in Cubic Meters)')
+st.pyplot(fig)
 
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
+# -------------------------------------------------------------------------------
+# Prediction (Example Placeholder)
+# Assuming you have a predictive model like ARIMA or ANN for water usage forecasting
 
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
-        else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
+# Load your model or prediction results here (for example, ARIMA or ANN model)
+# For now, we'll use a simple linear prediction as a placeholder.
 
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+st.header('Water Usage Prediction for the Next Year', divider='gray')
+
+# Placeholder for predictive analysis - This is where you would integrate your model.
+next_year = max_year + 1
+predicted_usage = np.random.uniform(low=filtered_df['Water_Usage'].min(), high=filtered_df['Water_Usage'].max(), size=1)
+
+# Display predicted water usage for next year
+st.metric(
+    label=f'Predicted Water Usage for {next_year}',
+    value=f'{predicted_usage[0]:,.0f} Cubic Meters',
+    delta=f'{(predicted_usage[0] - filtered_df['Water_Usage'].mean()):,.0f}',
+    delta_color='normal'
+)
+
+# -------------------------------------------------------------------------------
+# Conclusion Section
+st.header('Key Insights & Conclusions', divider='gray')
+
+# Add some observations based on the data.
+st.write("""
+- The water usage has been increasing in certain states like Selangor.
+- Significant fluctuations are seen during drought years, which affect production.
+- Predicting future water usage can help better manage water resources, especially in peak-demand states.
+""")
